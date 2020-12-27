@@ -1,10 +1,20 @@
 const ethers = require('ethers')
 const path = require('path')
 const fs = require('fs')
+const fetch = require('node-fetch')
 const { parseEther, formatEther } = ethers.utils
 const { critical, info } = require('./logging')
 
-const { UNIV2_ESD_USDC_LP, DAO_ADDRESS, LP_ADDRESS } = require('./constants')
+const {
+  BOND_EVENT_DAO,
+  BOND_EVENT_LP,
+  UNBOND_EVENT,
+  UNIV2_ESD_USDC_LP,
+  DAO_ADDRESS,
+  LP_ADDRESS,
+} = require('./constants')
+
+const ETHERSCAN_API_KEY = 'QJPHEUVRS84V4KH16EG1YTUQMHJMH9PBBK'
 
 const provider = new ethers.providers.InfuraProvider(
   1,
@@ -13,8 +23,72 @@ const provider = new ethers.providers.InfuraProvider(
 
 const etherscanProvider = new ethers.providers.EtherscanProvider(
   1,
-  'QJPHEUVRS84V4KH16EG1YTUQMHJMH9PBBK'
+  ETHERSCAN_API_KEY
 )
+
+const getDaoBondingEvents = async (startBlock, endBlock) => {
+  // Gets bond/unbond events
+  const bondUrl =
+    'https://api.etherscan.io/api?module=logs&action=getLogs' +
+    `&fromBlock=${startBlock}` +
+    `&toBlock=${endBlock}` +
+    `&address=${DAO_ADDRESS}` +
+    `&topic0=${BOND_EVENT_DAO}` +
+    `&apikey=${ETHERSCAN_API_KEY}`
+
+  const unbondUrl =
+    'https://api.etherscan.io/api?module=logs&action=getLogs' +
+    `&fromBlock=${startBlock}` +
+    `&toBlock=${endBlock}` +
+    `&address=${DAO_ADDRESS}` +
+    `&topic0=${UNBOND_EVENT}` +
+    `&apikey=${ETHERSCAN_API_KEY}`
+
+  const bondData = await fetch(bondUrl).then((x) => x.json())
+  const unbondData = await fetch(unbondUrl).then((x) => x.json())
+
+  const data = [...(bondData.result || []), ...(unbondData.result || [])]
+
+  const addresses = data
+    .map((x) => {
+      return ethers.utils.defaultAbiCoder.decode(['address'], x.topics[1])
+    })
+    .filter((v, i, a) => a.indexOf(v) === i)
+
+  return addresses
+}
+
+const getLpBondingEvents = async (startBlock, endBlock) => {
+  // Gets bond/unbond events
+  const bondUrl =
+    'https://api.etherscan.io/api?module=logs&action=getLogs' +
+    `&fromBlock=${startBlock}` +
+    `&toBlock=${endBlock}` +
+    `&address=${LP_ADDRESS}` +
+    `&topic0=${BOND_EVENT_LP}` +
+    `&apikey=${ETHERSCAN_API_KEY}`
+
+  const unbondUrl =
+    'https://api.etherscan.io/api?module=logs&action=getLogs' +
+    `&fromBlock=${startBlock}` +
+    `&toBlock=${endBlock}` +
+    `&address=${LP_ADDRESS}` +
+    `&topic0=${UNBOND_EVENT}` +
+    `&apikey=${ETHERSCAN_API_KEY}`
+
+  const bondData = await fetch(bondUrl).then((x) => x.json())
+  const unbondData = await fetch(unbondUrl).then((x) => x.json())
+
+  const data = [...(bondData.result || []), ...(unbondData.result || [])]
+
+  const addresses = data
+    .map((x) => {
+      return ethers.utils.defaultAbiCoder.decode(['address'], x.topics[1])
+    })
+    .filter((v, i, a) => a.indexOf(v) === i)
+
+  return addresses
+}
 
 const Dao = new ethers.Contract(
   DAO_ADDRESS,
@@ -172,24 +246,37 @@ const updateSnapshot = async () => {
   )
     .map((x) => x.from)
     .filter((v, i, a) => a.indexOf(v) === i)
+  const daoEvents = await getDaoBondingEvents(
+    daoStats.lastUpdateBlock,
+    curBlock
+  )
+
+  const newDaoAddresses = [...daoTxs, ...daoEvents].filter(
+    (v, i, a) => a.indexOf(v) === i
+  )
 
   const lpTxs = (
     await etherscanProvider.getHistory(LP_ADDRESS, lpStats.lastUpdateBlock)
   )
     .map((x) => x.from)
     .filter((v, i, a) => a.indexOf(v) === i)
+  const lpEvents = await getLpBondingEvents(lpStats.lastUpdateBlock, curBlock)
+
+  const newLpAddresses = [...lpTxs, ...lpEvents].filter(
+    (v, i, a) => a.indexOf(v) === i
+  )
 
   // Updates JSON data
   try {
-    info(`Updating LP data with ${daoTxs.length} new recipients`)
-    await snapshotDao(curBlock, daoTxs)
+    info(`Updating LP data with ${newDaoAddresses.length} new recipients`)
+    await snapshotDao(curBlock, newDaoAddresses)
   } catch (e) {
     critical(`Failed to update DAO data: ${e.toString()}`)
   }
 
   try {
-    info(`Updating DAO data with ${lpTxs.length} new recipients`)
-    await snapshotLp(curBlock, lpTxs)
+    info(`Updating DAO data with ${newLpAddresses.length} new recipients`)
+    await snapshotLp(curBlock, newLpAddresses)
   } catch (e) {
     critical(`Failed to update LP data: ${e.toString()}`)
   }
