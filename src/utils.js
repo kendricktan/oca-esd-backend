@@ -51,7 +51,7 @@ const getDaoBondingEvents = async (startBlock, endBlock) => {
 
   const addresses = data
     .map((x) => {
-      return ethers.utils.defaultAbiCoder.decode(['address'], x.topics[1])
+      return ethers.utils.defaultAbiCoder.decode(['address'], x.topics[1])[0]
     })
     .filter((v, i, a) => a.indexOf(v) === i)
 
@@ -83,7 +83,7 @@ const getLpBondingEvents = async (startBlock, endBlock) => {
 
   const addresses = data
     .map((x) => {
-      return ethers.utils.defaultAbiCoder.decode(['address'], x.topics[1])
+      return ethers.utils.defaultAbiCoder.decode(['address'], x.topics[1])[0]
     })
     .filter((v, i, a) => a.indexOf(v) === i)
 
