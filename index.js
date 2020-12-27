@@ -16,13 +16,8 @@ app.use('/', (req, res) => {
   res.send('ok').status(200)
 })
 
-const updateSnapshotHourly = async () => {
-  await updateSnapshot()
-  setTimeout(updateSnapshot, 3600000)
-}
-
 const main = async () => {
-  setTimeout(updateSnapshotHourly, 3600000)
+  updateSnapshot().then(() => setInterval(updateSnapshot, 1000 * 60 * 60))
   app.listen(port, () => {
     console.log(`Starting app on port ${port}`)
   })
