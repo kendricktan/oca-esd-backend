@@ -7,6 +7,9 @@ const app = express()
 const port = 3000
 
 app.use(morgan('combined'))
+app.use('/', (req, res) => {
+  res.send('ok').status(200)
+})
 app.use('/data', express.static(path.join(__dirname, 'data')))
 
 const updateSnapshotHourly = async () => {
