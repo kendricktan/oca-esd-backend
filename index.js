@@ -2,6 +2,7 @@ const express = require('express')
 const cors = require('cors')
 const path = require('path')
 const morgan = require('morgan')
+const { info } = require('./src/logging')
 const { updateSnapshot } = require('./src/utils')
 
 const app = express()
@@ -17,9 +18,12 @@ app.use('/', (req, res) => {
 })
 
 const main = async () => {
-  updateSnapshot().then(() => setInterval(updateSnapshot, 1000 * 60 * 60))
+  updateSnapshot().then(() => {
+    info('Running updateSnapshot every hour...')
+    setInterval(updateSnapshot, 1000 * 60 * 60)
+  })
   app.listen(port, () => {
-    console.log(`Starting app on port ${port}`)
+    info(`Starting app on port ${port}`)
   })
 }
 
