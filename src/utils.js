@@ -73,7 +73,7 @@ const getCouponPurchaseEvents = async (startBlock, endBlock) => {
 
   const data = couponData.result || []
 
-  const epochAndAddress = data
+  const dataCleaned = data
     .map((x) => {
       const address = ethers.utils.defaultAbiCoder.decode(
         ['address'],
@@ -82,17 +82,28 @@ const getCouponPurchaseEvents = async (startBlock, endBlock) => {
       const epoch = ethers.utils.defaultAbiCoder
         .decode(['uint256'], x.topics[2])[0]
         .toNumber()
+      const couponAmount = ethers.utils.defaultAbiCoder
+        .decode(['uint256', 'uint256'], x.data)[1]
+        .toString()
 
       return {
         address,
         epoch,
+        couponAmount,
+        txHash: x.transactionHash,
       }
     })
     .reduce((acc, x) => {
-      return { ...acc, [x.epoch]: [...(acc[x.epoch] || []), x.address] }
+      return {
+        ...acc,
+        [x.epoch]: [
+          ...(acc[x.epoch] || []),
+          { address: x.address, amount: x.couponAmount, txHash: x.txHash },
+        ],
+      }
     }, {})
 
-  return epochAndAddress
+  return dataCleaned
 }
 
 const getLpBondingEvents = async (startBlock, endBlock) => {
@@ -232,38 +243,34 @@ const snapshotDao = async (curBlock, addresses) => {
   fs.writeFileSync(snapshotLocation, JSON.stringify(existingData))
 }
 
-const snapshotCoupons = async (curBlock, epochsAndAddresses) => {
-  const couponStats = require('../data/ESD-COUPONS.json')
+const snapshotCouponsPurchase = async (curBlock, couponData) => {
+  const couponStats = require('../data/ESD-COUPONS-PURCHASED.json')
 
-  for (const [epoch, addresses] of Object.entries(epochsAndAddresses)) {
-    const newCouponDataForEpoch = (
-      await Promise.all(
-        addresses
-          .filter((v, i, a) => a.indexOf(v) === i)
-          .map(async (x) => {
-            const bal = await Dao.balanceOfCoupons(x, epoch, { blockTag: curBlock })
-            return {
-              address: [x.toLowerCase()],
-              amount: bal.toString(),
-            }
-          })
-      )
-    ).reduce((acc, x) => {
+  couponStats.coupons = [
+    ...Object.keys(couponData),
+    ...Object.keys(couponStats.coupons),
+  ]
+    .sort()
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .map((e) => {
+      return {
+        epoch: e,
+        data: [...(couponStats.coupons[e] || []), ...(couponData[e] || [])],
+      }
+    }, {})
+    .reduce((acc, x) => {
       return {
         ...acc,
-        [x.address]: x.amount,
+        [x.epoch]: x.data,
       }
     }, {})
 
-    couponStats.coupons[epoch] = {
-      ...(couponStats.coupons[epoch] || {}),
-      ...newCouponDataForEpoch,
-    }
-  }
-
   couponStats.lastUpdateBlock = curBlock
 
-  fs.writeFileSync('./data/ESD-COUPONS.json', JSON.stringify(couponStats))
+  fs.writeFileSync(
+    './data/ESD-COUPONS-PURCHASED.json',
+    JSON.stringify(couponStats)
+  )
 }
 
 const snapshotLp = async (curBlock, addresses) => {
@@ -308,7 +315,7 @@ const getEsdPerUniV2 = async () => {
 const updateSnapshot = async () => {
   const daoStats = require('../data/ESD-DAO.json')
   const lpStats = require('../data/ESD-LP.json')
-  const couponStats = require('../data/ESD-COUPONS.json')
+  const couponPurchaseStats = require('../data/ESD-COUPONS-PURCHASED.json')
 
   const curBlock = await provider.getBlockNumber()
 
@@ -340,8 +347,8 @@ const updateSnapshot = async () => {
 
   // Coupons
   // Get new epochs and addresses
-  const couponEpochAndAddresses = await getCouponPurchaseEvents(
-    couponStats.lastUpdateBlock,
+  const couponsPurchaseData = await getCouponPurchaseEvents(
+    couponPurchaseStats.lastUpdateBlock,
     curBlock
   )
 
@@ -361,16 +368,15 @@ const updateSnapshot = async () => {
   }
 
   try {
-    if (Object.keys(couponEpochAndAddresses).length > 0) {
+    if (Object.keys(couponsPurchaseData).length > 0) {
       info(
         `Updating COUPON data with ${
-          Object.values(couponEpochAndAddresses).reduce((acc, x) => [
-            ...acc,
-            ...x,
-          ]).length
+          Object.values(couponsPurchaseData)
+            .map((x) => Object.keys(x))
+            .reduce((acc, x) => [...acc, ...x], []).length
         } new users`
       )
-      await snapshotCoupons(curBlock, couponEpochAndAddresses)
+      await snapshotCouponsPurchase(curBlock, couponsPurchaseData)
     } else {
       info(`No new COUPON data`)
     }
