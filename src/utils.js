@@ -261,6 +261,8 @@ const snapshotCoupons = async (curBlock, epochsAndAddresses) => {
     }
   }
 
+  couponStats.lastUpdateBlock = curBlock
+
   fs.writeFileSync('./data/ESD-COUPONS.json', JSON.stringify(couponStats))
 }
 
