@@ -10,6 +10,7 @@ const {
   BOND_EVENT_LP,
   UNBOND_EVENT,
   UNIV2_ESD_USDC_LP,
+  COUPON_PURCHASE_EVENT_DAO,
   DAO_ADDRESS,
   LP_ADDRESS,
 } = require('./constants')
@@ -56,6 +57,42 @@ const getDaoBondingEvents = async (startBlock, endBlock) => {
     .filter((v, i, a) => a.indexOf(v) === i)
 
   return addresses
+}
+
+const getCouponPurchaseEvents = async (startBlock, endBlock) => {
+  // Gets coupon purchase events
+  const couponEvents =
+    'https://api.etherscan.io/api?module=logs&action=getLogs' +
+    `&fromBlock=${startBlock}` +
+    `&toBlock=${endBlock}` +
+    `&address=${DAO_ADDRESS}` +
+    `&topic0=${COUPON_PURCHASE_EVENT_DAO}` +
+    `&apikey=${ETHERSCAN_API_KEY}`
+
+  const couponData = await fetch(couponEvents).then((x) => x.json())
+
+  const data = couponData.result || []
+
+  const epochAndAddress = data
+    .map((x) => {
+      const address = ethers.utils.defaultAbiCoder.decode(
+        ['address'],
+        x.topics[1]
+      )[0]
+      const epoch = ethers.utils.defaultAbiCoder
+        .decode(['uint256'], x.topics[2])[0]
+        .toNumber()
+
+      return {
+        address,
+        epoch,
+      }
+    })
+    .reduce((acc, x) => {
+      return { ...acc, [x.epoch]: [...(acc[x.epoch] || []), x.address] }
+    }, {})
+
+  return epochAndAddress
 }
 
 const getLpBondingEvents = async (startBlock, endBlock) => {
@@ -285,3 +322,4 @@ const updateSnapshot = async () => {
 module.exports = {
   updateSnapshot,
 }
+
