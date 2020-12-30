@@ -380,5 +380,3 @@ const updateSnapshot = async () => {
 module.exports = {
   updateSnapshot,
 }
-
-updateSnapshot()
