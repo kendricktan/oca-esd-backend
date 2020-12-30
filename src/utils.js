@@ -232,6 +232,38 @@ const snapshotDao = async (curBlock, addresses) => {
   fs.writeFileSync(snapshotLocation, JSON.stringify(existingData))
 }
 
+const snapshotCoupons = async (curBlock, epochsAndAddresses) => {
+  const couponStats = require('../data/ESD-COUPONS.json')
+
+  for (const [epoch, addresses] of Object.entries(epochsAndAddresses)) {
+    const newCouponDataForEpoch = (
+      await Promise.all(
+        addresses
+          .filter((v, i, a) => a.indexOf(v) === i)
+          .map(async (x) => {
+            const bal = await Dao.balanceOfCoupons(x, epoch, { blockTag: curBlock })
+            return {
+              address: [x.toLowerCase()],
+              amount: bal.toString(),
+            }
+          })
+      )
+    ).reduce((acc, x) => {
+      return {
+        ...acc,
+        [x.address]: x.amount,
+      }
+    }, {})
+
+    couponStats.coupons[epoch] = {
+      ...(couponStats.coupons[epoch] || {}),
+      ...newCouponDataForEpoch,
+    }
+  }
+
+  fs.writeFileSync('./data/ESD-COUPONS.json', JSON.stringify(couponStats))
+}
+
 const snapshotLp = async (curBlock, addresses) => {
   const snapshotLocation = path.join(__dirname, '../data/ESD-LP.json')
 
@@ -274,6 +306,7 @@ const getEsdPerUniV2 = async () => {
 const updateSnapshot = async () => {
   const daoStats = require('../data/ESD-DAO.json')
   const lpStats = require('../data/ESD-LP.json')
+  const couponStats = require('../data/ESD-COUPONS.json')
 
   const curBlock = await provider.getBlockNumber()
 
@@ -303,6 +336,13 @@ const updateSnapshot = async () => {
     (v, i, a) => a.indexOf(v) === i
   )
 
+  // Coupons
+  // Get new epochs and addresses
+  const couponEpochAndAddresses = await getCouponPurchaseEvents(
+    couponStats.lastUpdateBlock,
+    curBlock
+  )
+
   // Updates JSON data
   try {
     info(`Updating LP data with ${newDaoAddresses.length} new recipients`)
@@ -317,9 +357,28 @@ const updateSnapshot = async () => {
   } catch (e) {
     critical(`Failed to update LP data: ${e.toString()}`)
   }
+
+  try {
+    if (Object.keys(couponEpochAndAddresses).length > 0) {
+      info(
+        `Updating COUPON data with ${
+          Object.values(couponEpochAndAddresses).reduce((acc, x) => [
+            ...acc,
+            ...x,
+          ]).length
+        } new users`
+      )
+      await snapshotCoupons(curBlock, couponEpochAndAddresses)
+    } else {
+      info(`No new COUPON data`)
+    }
+  } catch (e) {
+    critical(`Failed to update COUPON data: ${e.toString()}`)
+  }
 }
 
 module.exports = {
   updateSnapshot,
 }
 
+updateSnapshot()
